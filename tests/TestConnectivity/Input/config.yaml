@@ -1,0 +1,24 @@
+connectivityPlugins:
+  batchingCodec:
+    libraryName: connectivity-batching-codec
+    class: BatcherCodec
+  diagnosticCodec:
+    libraryName: DiagnosticCodec
+    class: DiagnosticCodec
+  echoTransport:
+    libraryName: EchoTransport
+    directory: ${PARENT_DIR}/../..
+    class: EchoTransport
+
+
+startChains:
+  batchChain:
+    - apama.eventMap
+    - diagnosticCodec:
+        output: file
+        fileName: before.txt
+    - batchingCodec
+    - diagnosticCodec:
+        output: file
+        fileName: after.txt
+    - echoTransport
