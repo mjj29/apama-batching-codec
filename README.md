@@ -3,7 +3,7 @@ Apama connectivity codec to convert between a batch of events and a single messa
 
 ## Supported Apama version
 
-This works with Apama 10.3.0.1 or later
+This works with Apama 10.3 or later
 
 ## Building the plugin
 
@@ -22,7 +22,7 @@ There is a provided Dockerfile which will build the plugin, run tests and produc
 
     docker build -t apama_with_batching_plugin .
 
-By default the public docker images from Docker Store for 10.3 will be used (once 10.3 has been released). To use an older version run:
+By default the public docker images from Docker Store for 10.3 will be used (once 10.3 has been released). To use another version run:
 
     docker build -t apama_with_batching_plugin --build-arg APAMA_VERSION=10.1 .
 
