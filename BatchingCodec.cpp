@@ -54,29 +54,33 @@ public:
 		list_t requestIds;
 		auto *latest = start;
 		for (Message *it = start; it != end; ++it) {
-			switch (metadataMode) {
-				case METADATA_REQUESTID_LIST: {
-					requestIds.push_back(std::move(it->getMetadataMap()[requestIdData]));
-					// fallthrough
-				}
-				case METADATA_SPLIT_BATCH:
-				case METADATA_FIRST: {
-					if (metadataMode == METADATA_SPLIT_BATCH && list.size() > 0 && it->getMetadataMap() != latest->getMetadataMap()) {
-						Message msg { data_t(std::move(list)), std::move(latest->getMetadataMap()) };
-						transportSide->sendBatchTowardsTransport(&msg, &msg + 1);
-						latest = it;
+			try {
+				switch (metadataMode) {
+					case METADATA_REQUESTID_LIST: {
+						requestIds.push_back(std::move(it->getMetadataMap()[requestIdData]));
+						// fallthrough
 					}
-					list.push_back(std::move(it->getPayload()));
-					break;
+					case METADATA_SPLIT_BATCH:
+					case METADATA_FIRST: {
+						if (metadataMode == METADATA_SPLIT_BATCH && list.size() > 0 && it->getMetadataMap() != latest->getMetadataMap()) {
+							Message msg { data_t(std::move(list)), std::move(latest->getMetadataMap()) };
+							transportSide->sendBatchTowardsTransport(&msg, &msg + 1);
+							latest = it;
+						}
+						list.push_back(std::move(it->getPayload()));
+						break;
+					}
+					case METADATA_MEMBER: {
+						map_t obj;
+						obj.insert(std::make_pair(payloadData.copy(), std::move(it->getPayload())));
+						obj.insert(std::make_pair(metadataData.copy(), std::move(it->getMetadataMap())));
+						list.push_back(std::move(obj));
+						break;
+					}
+					default: assert(false);
 				}
-				case METADATA_MEMBER: {
-					map_t obj;
-					obj.insert(std::make_pair(payloadData.copy(), std::move(it->getPayload())));
-					obj.insert(std::make_pair(metadataData.copy(), std::move(it->getMetadataMap())));
-					list.push_back(std::move(obj));
-					break;
-				}
-				default: assert(false);
+			} catch (const std::exception &e) {
+				logger.error("An exception occurred while creating a batch, discarding message %" PRIu64 " of %" PRIu64 ": %s", int64_t(it-start)+1, int64_t(end-start), e.what());
 			}
 		}
 		switch (metadataMode) {
@@ -96,43 +100,50 @@ public:
 		for (auto it = start; it != end; ++it) {
 			auto &payload = it->getPayload();
 			if (SAG_DATA_LIST == payload.type_tag()) {
-				auto &l = get<list_t>(payload);
-				if (latest != it) hostSide->sendBatchTowardsHost(latest, it);
-				list_t::iterator rit;
-				list_t::iterator rend;
-				if (metadataMode == METADATA_REQUESTID_LIST) {
-					rit = get<list_t>(it->getMetadataMap()[requestIdData]).begin();
-					rend = get<list_t>(it->getMetadataMap()[requestIdData]).end();
-				}
-				std::unique_ptr<Message[]> ms(new Message[l.size()]);
-				size_t i = 0;
-				for (auto jt = l.begin(); jt != l.end(); ++jt) {
-					switch (metadataMode) {
-						case METADATA_SPLIT_BATCH:
-						case METADATA_FIRST: {
-							auto meta = it->getMetadataMap().copy();
-							ms[i++] = Message{std::move(*jt), std::move(meta)};
-							break;
-						}
-						case METADATA_MEMBER: {
-							auto &m = get<map_t>(*jt);
-							auto &meta = get<map_t>(m[metadataData]);
-							auto &payload = m[payloadData];
-							ms[i++] = Message{std::move(payload), std::move(meta)};
-							break;
-						}
-						case METADATA_REQUESTID_LIST: {
-							auto meta = it->getMetadataMap().copy();
-							meta[requestIdData] = std::move(*rit);
-							rit++;
-							ms[i++] = Message{std::move(*jt), std::move(meta)};
-							break;
+				try {
+					auto &l = get<list_t>(payload);
+					if (latest != it) hostSide->sendBatchTowardsHost(latest, it);
+					list_t::iterator rit;
+					list_t::iterator rend;
+					if (metadataMode == METADATA_REQUESTID_LIST) {
+						rit = get<list_t>(it->getMetadataMap()[requestIdData]).begin();
+						rend = get<list_t>(it->getMetadataMap()[requestIdData]).end();
+					}
+					std::unique_ptr<Message[]> ms(new Message[l.size()]);
+					size_t i = 0;
+					for (auto jt = l.begin(); jt != l.end(); ++jt) {
+						try {
+							switch (metadataMode) {
+								case METADATA_SPLIT_BATCH:
+								case METADATA_FIRST: {
+									auto meta = it->getMetadataMap().copy();
+									ms[i++] = Message{std::move(*jt), std::move(meta)};
+									break;
+								}
+								case METADATA_MEMBER: {
+									auto &m = get<map_t>(*jt);
+									auto &meta = get<map_t>(m[metadataData]);
+									auto &payload = m[payloadData];
+									ms[i++] = Message{std::move(payload), std::move(meta)};
+									break;
+								}
+								case METADATA_REQUESTID_LIST: {
+									auto meta = it->getMetadataMap().copy();
+									meta[requestIdData] = std::move(*rit);
+									rit++;
+									ms[i++] = Message{std::move(*jt), std::move(meta)};
+									break;
+								}
+							}
+						} catch (const std::exception &e) {
+							logger.error("Error converting a member of the list to a separate message, dropping element %" PRIu64 " of %" PRIu64 ": %s", i, l.size(), e.what());
 						}
 					}
+					hostSide->sendBatchTowardsHost(ms.get(), ms.get()+i);
+					latest = it+1;
+				} catch (const std::exception &e) {
+					logger.error("Error creating batch from single message, dropping entire batch: %s", e.what());
 				}
-
-				hostSide->sendBatchTowardsHost(ms.get(), ms.get()+l.size());
-				latest = it+1;
 			}
 		}
 		if (latest != end) hostSide->sendBatchTowardsHost(latest, end);

@@ -30,6 +30,12 @@ To use custom images from your own repository then use:
 
     docker build -t apama_with_batching_plugin --build-arg APAMA_BUILDER=builderimage --build-arg APAMA_IMAGE=runtimeimage .
 
+## Running tests
+
+To run the tests for the plugin you will need to use an Apama command prompt to run the tests from within the tests directory:
+
+    pysys run
+
 ## Using the batching codec
 
 As a codec in a connectivity chain you will need to first import the plugin into your configuration:
@@ -52,5 +58,18 @@ You can now use the batching codec in a chain definition:
 
 The batching codec takes any payloads on the host side and converts to/from a list of those payloads on the trasport side. This will need to be handled by something which accepts a list, such as the JSON codec. Any messages delivered as a single batch will be combined into a list. This is dependent on the load on the system at any given time. Lists may contain one item or many items. The exact number will vary between multiple runs. Each message containing a list produced by the transport will be expanded into a separate batch delivered to the host.
 
-The batching codec takes no options. Metadata for a batch of events will be copied from the first event to the combined event. Metadata from a combined event will be copied to each message in the resulting batch.
+The batching codec has several options for handling metadata for the messages. This behaviour is controlled with the `metadataMode` configuration item to the codec:
+
+    batchingChain:
+	    # ...
+	    batchingCodec:
+		   metadatMode: member
+		 # ...
+
+The four options are:
+
+1. first: This is the default mode. It assumes the metadata on all messages is identical (or irrelevant) and copies the metadata from the first message in the batch to the combined message, and the metadata from the combined message to every message in the batch it creates.
+2. member: Instead of just putting the payload in the list, instead create a map `{ "metadata": messageMetadata, "payload": messagePayload }`
+3. requestIdList: Copy the metadata is in first, but set the `metadata.requestId` field to be a list containing all the individual request id fields from each message, in the same order. Responses will be mapped in the reverse direction.
+4. splitBatch: Check that the metadata is the same on each subsequent message and start a new batch whenever it changes.
 
