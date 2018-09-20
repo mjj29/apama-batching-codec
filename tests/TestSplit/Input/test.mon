@@ -1,0 +1,32 @@
+event Data
+{
+	string s;
+	integer meta;
+}
+
+monitor Testcase
+{
+	integer meta := 100;
+	action onload()
+	{
+		monitor.subscribe("batchChain");
+
+		on all Data() as d {
+			if (d.s != "Hello World" or d.meta != meta/10) {
+				log "Round-trip mis-match (got "+d.s.toString()+")" at ERROR; 
+			} else {
+				log "Round-trip OK" at INFO;
+			}
+			meta := meta - 1;
+			if (meta = 0) { meta := 100; }
+		}
+
+		com.softwareag.connectivity.ConnectivityPlugins.onApplicationInitialized();		
+
+		integer i := 100;
+		while (i > 0) {
+			send Data("Hello World", i/10) to "batchChain";
+			i := i - 1;
+		}
+	}
+}

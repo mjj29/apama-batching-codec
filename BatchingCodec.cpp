@@ -23,21 +23,72 @@ namespace apamax {
 class BatcherCodec: public AbstractCodec
 {
 public:
+	enum MetadataMode { METADATA_FIRST, METADATA_MEMBER, METADATA_REQUESTID_LIST, METADATA_SPLIT_BATCH };
 	/// Parse the config file at startup
-	BatcherCodec(const CodecConstructorParameters &params) : AbstractCodec(params) {
-		if (params.getConfig().size() != 0) {
-			throw std::runtime_error("Unexpected configuration");
+	BatcherCodec(const CodecConstructorParameters &params)
+		: AbstractCodec(params),
+		metadataMode(METADATA_FIRST),
+		requestIdData("requestId"),
+		payloadData("payload"),
+		metadataData("metadata")
+	{
+		MapExtractor configEx(config, "config");
+		std::string mode = configEx.getStringDisallowEmpty("metadataMode", "first");
+		if (mode == "first") {
+			metadataMode = METADATA_FIRST;
+		} else if (mode == "member") {
+			metadataMode = METADATA_MEMBER;
+		} else if (mode == "requestIdList") {
+			metadataMode = METADATA_REQUESTID_LIST;
+		} else if (mode == "splitBatch") {
+			metadataMode = METADATA_SPLIT_BATCH;
+		} else {
+			throw std::runtime_error("Unknown metadataMode. Should be first, member, requestIdList or splitBatch");
 		}
+		configEx.checkNoItemsRemaining();
 	}
 
 	virtual void sendBatchTowardsTransport(Message *start, Message *end) {
 		if (start == end) return;
 		list_t list;
+		list_t requestIds;
+		auto *latest = start;
 		for (Message *it = start; it != end; ++it) {
-			list.push_back(std::move(it->getPayload()));
+			switch (metadataMode) {
+				case METADATA_REQUESTID_LIST: {
+					requestIds.push_back(std::move(it->getMetadataMap()[requestIdData]));
+					// fallthrough
+				}
+				case METADATA_SPLIT_BATCH:
+				case METADATA_FIRST: {
+					if (metadataMode == METADATA_SPLIT_BATCH && list.size() > 0 && it->getMetadataMap() != latest->getMetadataMap()) {
+						Message msg { data_t(std::move(list)), std::move(latest->getMetadataMap()) };
+						transportSide->sendBatchTowardsTransport(&msg, &msg + 1);
+						latest = it;
+					}
+					list.push_back(std::move(it->getPayload()));
+					break;
+				}
+				case METADATA_MEMBER: {
+					map_t obj;
+					obj.insert(std::make_pair(payloadData.copy(), std::move(it->getPayload())));
+					obj.insert(std::make_pair(metadataData.copy(), std::move(it->getMetadataMap())));
+					list.push_back(std::move(obj));
+					break;
+				}
+				default: assert(false);
+			}
 		}
-		Message msg { data_t(std::move(list)), std::move(start->getMetadata()) };
-		transportSide->sendBatchTowardsTransport(&msg, &msg + 1);
+		switch (metadataMode) {
+			case METADATA_REQUESTID_LIST: {
+				start->getMetadataMap()[requestIdData] = std::move(requestIds);
+				// fallthrough
+			}
+			default: {
+				Message msg { data_t(std::move(list)), std::move(latest->getMetadataMap()) };
+				transportSide->sendBatchTowardsTransport(&msg, &msg + 1);
+			}
+		}
 	}
 
 	virtual void sendBatchTowardsHost(Message *start, Message *end) {
@@ -47,10 +98,37 @@ public:
 			if (SAG_DATA_LIST == payload.type_tag()) {
 				auto &l = get<list_t>(payload);
 				if (latest != it) hostSide->sendBatchTowardsHost(latest, it);
+				list_t::iterator rit;
+				list_t::iterator rend;
+				if (metadataMode == METADATA_REQUESTID_LIST) {
+					rit = get<list_t>(it->getMetadataMap()[requestIdData]).begin();
+					rend = get<list_t>(it->getMetadataMap()[requestIdData]).end();
+				}
 				std::unique_ptr<Message[]> ms(new Message[l.size()]);
 				size_t i = 0;
 				for (auto jt = l.begin(); jt != l.end(); ++jt) {
-					ms[i++] = Message{std::move(*jt), it->getMetadataMap().copy()};
+					switch (metadataMode) {
+						case METADATA_SPLIT_BATCH:
+						case METADATA_FIRST: {
+							auto meta = it->getMetadataMap().copy();
+							ms[i++] = Message{std::move(*jt), std::move(meta)};
+							break;
+						}
+						case METADATA_MEMBER: {
+							auto &m = get<map_t>(*jt);
+							auto &meta = get<map_t>(m[metadataData]);
+							auto &payload = m[payloadData];
+							ms[i++] = Message{std::move(payload), std::move(meta)};
+							break;
+						}
+						case METADATA_REQUESTID_LIST: {
+							auto meta = it->getMetadataMap().copy();
+							meta[requestIdData] = std::move(*rit);
+							rit++;
+							ms[i++] = Message{std::move(*jt), std::move(meta)};
+							break;
+						}
+					}
 				}
 
 				hostSide->sendBatchTowardsHost(ms.get(), ms.get()+l.size());
@@ -59,6 +137,10 @@ public:
 		}
 		if (latest != end) hostSide->sendBatchTowardsHost(latest, end);
 	}
+	MetadataMode metadataMode;
+	data_t requestIdData;
+	data_t payloadData;
+	data_t metadataData;
 
 };
 /// Export this codec

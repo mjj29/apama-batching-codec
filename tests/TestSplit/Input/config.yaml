@@ -1,0 +1,36 @@
+connectivityPlugins:
+  batchingCodec:
+    libraryName: connectivity-batching-codec
+    class: BatcherCodec
+  mapperCodec:
+    libraryName: MapperCodec
+    class: MapperCodec
+  diagnosticCodec:
+    libraryName: DiagnosticCodec
+    class: DiagnosticCodec
+  echoTransport:
+    libraryName: EchoTransport
+    directory: ${PARENT_DIR}/../..
+    class: EchoTransport
+
+
+startChains:
+  batchChain:
+    - apama.eventMap
+    - mapperCodec:
+        "*":
+          towardsTransport:
+            mapFrom:
+              - metadata.foo: payload.meta
+          towardsHost:
+            mapFrom:
+              - payload.meta: metadata.foo
+    - diagnosticCodec:
+        output: file
+        fileName: before.txt
+    - batchingCodec:
+        metadataMode: splitBatch
+    - diagnosticCodec:
+        output: file
+        fileName: after.txt
+    - echoTransport
