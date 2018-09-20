@@ -8,11 +8,12 @@ connectivityPlugins:
   mapperCodec:
     libraryName: MapperCodec
     class: MapperCodec
-  echoTransport:
-    libraryName: EchoTransport
-    directory: ${PARENT_DIR}/../..
-    class: EchoTransport
-
+  unitTestHarness:
+    classpath: ${APAMA_HOME}/lib/connectivity-unit-test-harness.jar
+    class: com.softwareag.connectivity.testplugins.UnitTestHarness
+  nullTransport:
+    classpath: ${APAMA_HOME}/lib/connectivity-unit-test-harness.jar
+    class: com.softwareag.connectivity.testplugins.NullTransport
 
 startChains:
   batchChain:
@@ -33,4 +34,7 @@ startChains:
     - diagnosticCodec:
         output: file
         fileName: after.txt
-    - echoTransport
+    - unitTestHarness:
+        pluginUnderTest: towardsHost
+        echoBack: true
+    - nullTransport

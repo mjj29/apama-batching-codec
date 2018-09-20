@@ -12,7 +12,6 @@ COPY --chown=sagadmin:sagadmin . $APAMA_WORK/plugin
 
 RUN mkdir -p $APAMA_WORK/lib $APAMA_WORK/monitors
 RUN g++ -std=c++0x -o $APAMA_WORK/lib/libconnectivity-batching-codec.so -I$APAMA_HOME/include -L$APAMA_HOME/lib -lapclient -I$APAMA_WORK/plugin -shared -fPIC $APAMA_WORK/plugin/BatchingCodec.cpp
-RUN g++ -std=c++0x -o $APAMA_WORK/plugin/tests/libEchoTransport.so -I$APAMA_HOME/include -L$APAMA_HOME/lib -lapclient -I$APAMA_WORK/plugin -shared -fPIC $APAMA_WORK/plugin/EchoTransport.cpp
 
 RUN cd ${APAMA_WORK}/plugin/tests && pysys run | tee logfile && grep 'THERE WERE NO NON PASSES' logfile
 
