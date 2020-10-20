@@ -18,6 +18,6 @@ class PySysTest(ApamaBaseTest):
 		self.assertLineCount('testcorrelator.log', expr='Round-trip OK', condition='==200')
 		self.assertLineCount('before.txt', expr='Towards Host: {sag.type:Data,requestId:[0-9]*,sag.channel:batchChain} / {s:Hello World}', condition='==100')
 		self.assertLineCount('before.txt', expr='Towards Transport: {sag.type:Data,requestId:[0-9]*,sag.channel:batchChain} / {s:Hello World}', condition='==100')
-		self.assertGrep('after.txt', expr='Towards Transport: {sag.type:Data,requestId:\\[[0-9,]*\\],sag.channel:batchChain} / \\[', condition='>=1')
-		self.assertGrep('after.txt', expr='Towards Host: {sag.type:Data,requestId:\\[[0-9,]*\\],sag.channel:batchChain} / \\[{s:Hello World},{s:Hello World}', condition='>=1')
+		self.assertGrep('after.txt', expr='Towards Transport: {sag.type:Data,requestId:\\[[0-9,]*\\],sag.channel:batchChain} / \\[', contains=True)
+		self.assertGrep('after.txt', expr='Towards Host: {sag.type:Data,requestId:\\[[0-9,]*\\],sag.channel:batchChain} / \\[{s:Hello World},{s:Hello World}', contains=True)
 
